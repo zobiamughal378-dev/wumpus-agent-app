@@ -1,0 +1,1426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wumpus KB Agent — Logic-Driven Pathfinding</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0d14;
+  --surface: #111827;
+  --surface2: #1a2236;
+  --border: #2a3a55;
+  --accent: #00d4ff;
+  --accent2: #7c3aed;
+  --accent3: #f59e0b;
+  --safe: #10b981;
+  --danger: #ef4444;
+  --unknown: #374151;
+  --text: #e2e8f0;
+  --text-dim: #64748b;
+  --wumpus: #dc2626;
+  --pit: #1e293b;
+  --font-mono: 'Space Mono', monospace;
+  --font-display: 'Syne', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-display);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* HEADER */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 28px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.logo-icon {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+}
+
+.status-pill {
+  background: rgba(0,212,255,0.1);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  animation: pulse-border 2s infinite;
+}
+
+@keyframes pulse-border {
+  0%,100% { box-shadow: 0 0 0 0 rgba(0,212,255,0.3); }
+  50% { box-shadow: 0 0 0 4px rgba(0,212,255,0.1); }
+}
+
+/* LAYOUT */
+.app {
+  display: grid;
+  grid-template-columns: 240px 1fr 300px;
+  grid-template-rows: 1fr;
+  height: calc(100vh - 57px);
+}
+
+/* LEFT PANEL */
+.panel-left {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.panel-section h3 {
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field-label {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  min-width: 40px;
+}
+
+.field-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  width: 70px;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 14px;
+  border: none;
+  border-radius: 8px;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s;
+  letter-spacing: 0.01em;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), #0099cc);
+  color: #000;
+}
+
+.btn-primary:hover { transform: translateY(-1px); filter: brightness(1.1); }
+
+.btn-secondary {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+.btn-danger {
+  background: rgba(239,68,68,0.12);
+  color: var(--danger);
+  border: 1px solid rgba(239,68,68,0.3);
+}
+
+.btn-danger:hover { background: rgba(239,68,68,0.2); }
+
+.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+
+/* PERCEPTS */
+.percept-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.percept-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+  transition: all 0.3s;
+}
+
+.percept-item.active {
+  border-color: var(--accent3);
+  background: rgba(245,158,11,0.08);
+  color: var(--accent3);
+}
+
+.percept-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.percept-item.active .percept-dot {
+  background: var(--accent3);
+  box-shadow: 0 0 6px var(--accent3);
+}
+
+/* LEGEND */
+.legend-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.legend-swatch {
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+/* CONTROLS */
+.control-row {
+  display: flex;
+  gap: 6px;
+}
+
+.speed-label {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.speed-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+/* CENTER - GRID */
+.panel-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: auto;
+  background: var(--bg);
+  position: relative;
+}
+
+.cave-title {
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cave-title::before, .cave-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.grid-wrapper {
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 0 40px rgba(0,212,255,0.05);
+}
+
+#grid {
+  display: grid;
+  gap: 0;
+}
+
+.cell {
+  width: 90px;
+  height: 90px;
+  border: 1px solid rgba(255,255,255,0.04);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
+  cursor: default;
+  overflow: hidden;
+}
+
+.cell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.cell:hover::before { opacity: 1; }
+
+/* Cell states */
+.cell.unknown { background: var(--unknown); }
+.cell.unknown::before { background: rgba(255,255,255,0.03); }
+
+.cell.visited {
+  background: #1a3a2a;
+}
+
+.cell.safe {
+  background: #0d2d1e;
+  border-color: rgba(16,185,129,0.2);
+}
+
+.cell.agent-here {
+  background: #1a2d3a;
+  border-color: var(--accent) !important;
+  box-shadow: inset 0 0 20px rgba(0,212,255,0.15);
+  z-index: 2;
+}
+
+.cell.pit-confirmed {
+  background: #1a0d0d;
+  border-color: rgba(239,68,68,0.3) !important;
+}
+
+.cell.wumpus-confirmed {
+  background: #2d1a0d;
+  border-color: rgba(220,38,38,0.4) !important;
+}
+
+.cell.frontier {
+  background: #1a1a2d;
+  border-color: rgba(124,58,237,0.3) !important;
+  animation: frontier-pulse 1.5s infinite alternate;
+}
+
+@keyframes frontier-pulse {
+  from { box-shadow: inset 0 0 0px rgba(124,58,237,0); }
+  to { box-shadow: inset 0 0 12px rgba(124,58,237,0.2); }
+}
+
+.cell-coord {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  color: rgba(255,255,255,0.2);
+  line-height: 1;
+}
+
+.cell-icons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  justify-content: center;
+  align-items: center;
+  z-index: 1;
+}
+
+.icon-badge {
+  font-size: 1.4rem;
+  line-height: 1;
+  filter: drop-shadow(0 0 4px rgba(0,0,0,0.5));
+}
+
+.cell-label {
+  position: absolute;
+  bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  color: rgba(255,255,255,0.3);
+  text-align: center;
+  letter-spacing: 0.05em;
+}
+
+.safe-indicator {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--safe);
+  box-shadow: 0 0 6px var(--safe);
+}
+
+.visit-path {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--safe);
+  border-radius: 0;
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+
+.cell.visited .visit-path,
+.cell.agent-here .visit-path { opacity: 0.15; }
+
+/* RIGHT PANEL */
+.panel-right {
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  padding: 20px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* METRICS */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.metric-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 10px;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+
+.metric-card:hover { border-color: var(--accent); }
+
+.metric-val {
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  line-height: 1;
+  margin-bottom: 3px;
+}
+
+.metric-label {
+  font-size: 0.63rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* INFERENCE LOG */
+.log-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  height: 180px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  line-height: 1.7;
+}
+
+.log-box::-webkit-scrollbar { width: 4px; }
+.log-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.log-entry { color: var(--text-dim); border-bottom: 1px solid rgba(255,255,255,0.03); padding: 1px 0; }
+.log-entry.tell { color: #7dd3fc; }
+.log-entry.ask { color: #86efac; }
+.log-entry.resolve { color: var(--accent3); }
+.log-entry.move { color: var(--accent); }
+.log-entry.warn { color: var(--danger); }
+.log-entry.goal { color: #c084fc; }
+
+/* CNF STORE */
+.cnf-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  height: 140px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 0.63rem;
+  line-height: 1.8;
+  color: var(--text-dim);
+}
+
+.cnf-box::-webkit-scrollbar { width: 4px; }
+.cnf-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.cnf-clause { 
+  padding: 1px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.02);
+}
+
+/* GOLD STATUS */
+.gold-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.gold-status.found {
+  border-color: var(--accent3);
+  background: rgba(245,158,11,0.08);
+  color: var(--accent3);
+}
+
+/* TOAST */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--surface2);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  opacity: 0;
+  transition: all 0.3s;
+  z-index: 999;
+  pointer-events: none;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Scrollbars */
+.panel-left::-webkit-scrollbar,
+.panel-right::-webkit-scrollbar { width: 4px; }
+.panel-left::-webkit-scrollbar-thumb,
+.panel-right::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* Game over overlay */
+.game-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.8);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  flex-direction: column;
+  gap: 12px;
+  backdrop-filter: blur(4px);
+}
+
+.game-overlay.show { display: flex; }
+
+.overlay-title {
+  font-size: 2rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.overlay-sub {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* Animations */
+@keyframes cell-enter {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.cell { animation: cell-enter 0.3s ease backwards; }
+
+@keyframes agent-bounce {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.icon-badge.agent-icon { animation: agent-bounce 1.2s infinite; }
+
+/* Breeze animation */
+@keyframes breeze-ripple {
+  from { box-shadow: inset 0 0 0px rgba(0,212,255,0); }
+  to { box-shadow: inset 0 0 16px rgba(0,212,255,0.25); }
+}
+
+.cell.has-breeze { animation: breeze-ripple 0.8s infinite alternate; }
+
+/* Stench animation */
+@keyframes stench-ripple {
+  from { box-shadow: inset 0 0 0px rgba(124,58,237,0); }
+  to { box-shadow: inset 0 0 16px rgba(124,58,237,0.25); }
+}
+
+.cell.has-stench { animation: stench-ripple 0.8s infinite alternate; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🧠</div>
+    Wumpus KB Agent
+  </div>
+  <div class="status-pill" id="status-pill">● IDLE</div>
+</header>
+
+<div class="app">
+
+<!-- LEFT PANEL -->
+<div class="panel-left">
+
+  <div class="panel-section">
+    <h3>Dungeon Setup</h3>
+    <div class="field-group">
+      <div class="field-row">
+        <span class="field-label">Rows</span>
+        <input class="field-input" id="inp-rows" type="number" value="6" min="3" max="10">
+      </div>
+      <div class="field-row">
+        <span class="field-label">Cols</span>
+        <input class="field-input" id="inp-cols" type="number" value="6" min="3" max="10">
+      </div>
+      <div class="field-row">
+        <span class="field-label">Pits</span>
+        <input class="field-input" id="inp-pits" type="number" value="5" min="1" max="15">
+      </div>
+    </div>
+    <button class="btn btn-primary" id="btn-new">▶ New Episode</button>
+  </div>
+
+  <div class="panel-section">
+    <h3>Percepts</h3>
+    <div class="percept-list">
+      <div class="percept-item" id="perc-breeze">
+        <div class="percept-dot"></div>
+        <span>💨 Breeze</span>
+      </div>
+      <div class="percept-item" id="perc-stench">
+        <div class="percept-dot"></div>
+        <span>🦨 Stench</span>
+      </div>
+      <div class="percept-item" id="perc-glitter">
+        <div class="percept-dot"></div>
+        <span>✨ Glitter</span>
+      </div>
+      <div class="percept-item" id="perc-bump">
+        <div class="percept-dot"></div>
+        <span>💥 Bump</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h3>Agent Control</h3>
+    <div class="control-row">
+      <button class="btn btn-secondary" id="btn-step" style="flex:1" disabled>Step →</button>
+      <button class="btn btn-danger" id="btn-pause" style="flex:1" disabled>Pause ▐▐</button>
+    </div>
+    <button class="btn btn-primary" id="btn-run" style="margin-top:8px" disabled>▶▶ Run Auto</button>
+    <div style="margin-top:12px">
+      <div class="speed-label">Speed: <span id="speed-val">500</span>ms</div>
+      <input type="range" class="speed-slider" id="speed-slider" min="100" max="1500" value="500" step="50">
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h3>Legend</h3>
+    <div class="legend-grid">
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#1a2d3a;border:1px solid #00d4ff"></div>
+        Agent
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#0d2d1e"></div>
+        Safe / Visited
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#374151"></div>
+        Unknown
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#1a0d0d;border:1px solid rgba(239,68,68,0.3)"></div>
+        Pit / Wumpus
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#1a1a2d;border:1px solid rgba(124,58,237,0.3)"></div>
+        Frontier
+      </div>
+    </div>
+    <div style="margin-top:8px;font-size:0.72rem;color:var(--text-dim);line-height:1.6">
+      🤖 Agent &nbsp; 🏆 Gold &nbsp; ☠️ Wumpus<br>
+      💀 Pit &nbsp; 💨 Breeze &nbsp; 🦨 Stench
+    </div>
+    <div style="margin-top:8px;font-size:0.72rem;color:var(--text-dim)">
+      Gold: ✅ Rescue ↑ kb-clauses ↑
+    </div>
+  </div>
+
+</div>
+
+<!-- CENTER -->
+<div class="panel-center" id="center-panel">
+  <div class="cave-title">🗺 Cave of Wumpus</div>
+  <div class="grid-wrapper">
+    <div id="grid"></div>
+  </div>
+  <div class="game-overlay" id="game-overlay">
+    <div class="overlay-title" id="overlay-title">💀 Agent Died!</div>
+    <div class="overlay-sub" id="overlay-sub">Stepped into a Pit or met the Wumpus</div>
+    <button class="btn btn-primary" style="width:160px;margin-top:8px" onclick="startNewEpisode()">Try Again</button>
+  </div>
+</div>
+
+<!-- RIGHT PANEL -->
+<div class="panel-right">
+
+  <div class="panel-section">
+    <h3>Mission Metrics</h3>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-val" id="met-inferences">0</div>
+        <div class="metric-label">Inferences</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val" id="met-moves">0</div>
+        <div class="metric-label">Moves</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val" id="met-cells-safe">0</div>
+        <div class="metric-label">Cells Safe</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val" id="met-kb-clauses">0</div>
+        <div class="metric-label">KB Clauses</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h3>Inference Log</h3>
+    <div class="log-box" id="log-box">
+      <div class="log-entry" style="color:var(--text-dim)">Awaiting episode start...</div>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h3>CNF Clause Store</h3>
+    <div class="cnf-box" id="cnf-box">
+      <div style="color:var(--text-dim)">KB empty.</div>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h3>Gold Status</h3>
+    <div class="gold-status" id="gold-status">
+      🏆 Gold not yet found
+    </div>
+  </div>
+
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+let ROWS = 6, COLS = 6, NUM_PITS = 5;
+let grid_data = [];      // [{pit, wumpus, gold, breeze, stench, visited, safe, agentHere}]
+let agentRow = 0, agentCol = 0;
+let agentAlive = true;
+let goldFound = false;
+let goldPos = null;
+let wumpusPos = null;
+let kb = [];             // CNF clauses: arrays of literal strings
+let inferenceCount = 0;
+let moveCount = 0;
+let cellsSafe = new Set();
+let running = false;
+let runInterval = null;
+let speed = 500;
+let gameActive = false;
+
+// ============================================================
+// HELPERS
+// ============================================================
+const idx = (r,c) => r * COLS + c;
+const inBounds = (r,c) => r >= 0 && r < ROWS && c >= 0 && c < COLS;
+const neighbors = (r,c) => [[r-1,c],[r+1,c],[r,c-1],[r,c+1]].filter(([nr,nc])=>inBounds(nr,nc));
+
+function cellId(r,c,type) { return `${type}_${r}_${c}`; }
+function pitLit(r,c) { return `P_${r}_${c}`; }
+function nopiLit(r,c) { return `¬P_${r}_${c}`; }
+function wumLit(r,c) { return `W_${r}_${c}`; }
+function nowumLit(r,c) { return `¬W_${r}_${c}`; }
+function brezLit(r,c) { return `B_${r}_${c}`; }
+function stenLit(r,c) { return `S_${r}_${c}`; }
+
+// ============================================================
+// KNOWLEDGE BASE
+// ============================================================
+function kbAdd(clause) {
+  // Deduplicate
+  const key = [...clause].sort().join('|');
+  if (!kb.find(c => [...c].sort().join('|') === key)) {
+    kb.push([...clause]);
+    updateMetrics();
+    updateCNFBox();
+  }
+}
+
+// Resolution refutation: prove alpha is entailed by KB
+// We try to prove ¬alpha leads to contradiction with KB
+function kbAsk(alpha) {
+  inferenceCount++;
+  updateMetrics();
+
+  // negate alpha (which is a literal like ¬P_r_c)
+  // so negation of ¬P_r_c is P_r_c
+  const negAlpha = negateLit(alpha);
+  const clauses = [...kb.map(c=>[...c]), [negAlpha]];
+
+  // Resolution loop
+  const seen = new Set();
+  clauses.forEach(c => seen.add(clauseKey(c)));
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const len = clauses.length;
+    for (let i = 0; i < len; i++) {
+      for (let j = i+1; j < len; j++) {
+        const resolvents = resolve(clauses[i], clauses[j]);
+        for (const r of resolvents) {
+          if (r.length === 0) {
+            log(`  → Contradiction found! ${alpha} is TRUE`, 'resolve');
+            return true; // entailed
+          }
+          const k = clauseKey(r);
+          if (!seen.has(k)) {
+            seen.add(k);
+            clauses.push(r);
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function resolve(c1, c2) {
+  const results = [];
+  for (const lit of c1) {
+    const neg = negateLit(lit);
+    if (c2.includes(neg)) {
+      const resolvent = [
+        ...c1.filter(l=>l!==lit),
+        ...c2.filter(l=>l!==neg)
+      ];
+      // Remove duplicate literals
+      const unique = [...new Set(resolvent)];
+      // Check for tautology (contains p and ¬p)
+      let taut = false;
+      for (const l of unique) {
+        if (unique.includes(negateLit(l))) { taut = true; break; }
+      }
+      if (!taut) results.push(unique);
+    }
+  }
+  return results;
+}
+
+function negateLit(lit) {
+  if (lit.startsWith('¬')) return lit.slice(1);
+  return '¬' + lit;
+}
+
+function clauseKey(c) { return [...c].sort().join('|'); }
+
+// ============================================================
+// TELL KB: encode percepts as CNF
+// ============================================================
+function tellPercepts(r, c) {
+  const cell = grid_data[idx(r,c)];
+
+  if (cell.breeze) {
+    // B_r,c is true → at least one neighbor is a pit
+    log(`TELL: B_${r},${c} ⇔ at least one adjacent pit`, 'tell');
+    const nbrs = neighbors(r,c);
+    // Forward: B → (P_n1 ∨ P_n2 ∨ ...)
+    kbAdd([`¬${brezLit(r,c)}`, ...nbrs.map(([nr,nc])=>pitLit(nr,nc))]);
+    // Backward: each P_ni → B
+    for (const [nr,nc] of nbrs) {
+      kbAdd([nopiLit(nr,nc), brezLit(r,c)]);
+    }
+    // Assert breeze
+    kbAdd([brezLit(r,c)]);
+  } else {
+    log(`TELL: ¬B_${r},${c} → no adjacent pits`, 'tell');
+    kbAdd([`¬${brezLit(r,c)}`]);
+    // If no breeze, all neighbors are safe from pits
+    for (const [nr,nc] of neighbors(r,c)) {
+      kbAdd([nopiLit(nr,nc)]);
+      log(`TELL: ¬P_${nr},${nc} (no breeze at ${r},${c})`, 'tell');
+    }
+  }
+
+  if (cell.stench) {
+    log(`TELL: S_${r},${c} ⇔ Wumpus adjacent`, 'tell');
+    const nbrs = neighbors(r,c);
+    kbAdd([`¬${stenLit(r,c)}`, ...nbrs.map(([nr,nc])=>wumLit(nr,nc))]);
+    for (const [nr,nc] of nbrs) {
+      kbAdd([nowumLit(nr,nc), stenLit(r,c)]);
+    }
+    kbAdd([stenLit(r,c)]);
+  } else {
+    log(`TELL: ¬S_${r},${c} → Wumpus not adjacent`, 'tell');
+    kbAdd([`¬${stenLit(r,c)}`]);
+    for (const [nr,nc] of neighbors(r,c)) {
+      kbAdd([nowumLit(nr,nc)]);
+    }
+  }
+
+  // Tell current cell is safe
+  kbAdd([nopiLit(r,c)]);
+  kbAdd([nowumLit(r,c)]);
+}
+
+// ============================================================
+// SAFE CHECK via resolution
+// ============================================================
+function isSafeByLogic(r, c) {
+  log(`ASK: Safe(${r},${c})? Running resolution refutation...`, 'ask');
+  const pitSafe = kbAsk(nopiLit(r,c));
+  const wumSafe = kbAsk(nowumLit(r,c));
+
+  if (pitSafe && wumSafe) {
+    log(`TELL: ¬${pitLit(r,c)} ∧ ¬${wumLit(r,c)} → SAFE (${r},${c})`, 'ask');
+    return true;
+  }
+  return false;
+}
+
+// ============================================================
+// PATHFINDING: choose next move
+// ============================================================
+function chooseNext() {
+  const nbrs = neighbors(agentRow, agentCol);
+  const safeUnvisited = [];
+  const safeVisited = [];
+  const unknown = [];
+
+  for (const [nr, nc] of nbrs) {
+    const cell = grid_data[idx(nr,nc)];
+    if (cell.pit || cell.wumpus) continue;
+
+    if (cellsSafe.has(`${nr},${nc}`)) {
+      if (!cell.visited) safeUnvisited.push([nr,nc]);
+      else safeVisited.push([nr,nc]);
+    } else {
+      // Try to infer safety
+      const safe = isSafeByLogic(nr, nc);
+      if (safe) {
+        cellsSafe.add(`${nr},${nc}`);
+        grid_data[idx(nr,nc)].inferredSafe = true;
+        safeUnvisited.push([nr,nc]);
+        log(`TELL: ¬${pitLit(nr,nc)} ∧ ¬${wumLit(nr,nc)} → no hazard adjacent (${nr},${nc})`, 'resolve');
+      } else {
+        unknown.push([nr,nc]);
+      }
+    }
+  }
+
+  // Priority: safe unvisited > safe visited (backtrack) > unknown (frontier)
+  if (safeUnvisited.length > 0) {
+    // Pick safe unvisited with fewest unvisited neighbors (more constrained)
+    safeUnvisited.sort((a,b) => {
+      const ua = neighbors(a[0],a[1]).filter(([r,c])=>!grid_data[idx(r,c)].visited).length;
+      const ub = neighbors(b[0],b[1]).filter(([r,c])=>!grid_data[idx(r,c)].visited).length;
+      return ua - ub;
+    });
+    return { target: safeUnvisited[0], type: 'safe' };
+  }
+
+  if (safeVisited.length > 0) {
+    return { target: safeVisited[0], type: 'backtrack' };
+  }
+
+  // No safe moves - explore frontier cautiously (pick least risky unknown)
+  if (unknown.length > 0) {
+    log('⚠ No proven-safe move. Exploring frontier...', 'warn');
+    return { target: unknown[0], type: 'frontier' };
+  }
+
+  return null; // stuck
+}
+
+// ============================================================
+// MOVE AGENT
+// ============================================================
+function moveAgent(r, c) {
+  // Clear old position
+  grid_data[idx(agentRow, agentCol)].agentHere = false;
+  agentRow = r;
+  agentCol = c;
+  const cell = grid_data[idx(r,c)];
+  cell.agentHere = true;
+  cell.visited = true;
+  moveCount++;
+
+  // Check death
+  if (cell.pit) {
+    log(`💀 Agent fell into PIT at (${r},${c})!`, 'warn');
+    agentAlive = false;
+    renderGrid();
+    endGame(false, 'pit');
+    return;
+  }
+  if (cell.wumpus) {
+    log(`☠ Agent encountered WUMPUS at (${r},${c})!`, 'warn');
+    agentAlive = false;
+    renderGrid();
+    endGame(false, 'wumpus');
+    return;
+  }
+
+  cellsSafe.add(`${r},${c}`);
+  if (!cell.inferredSafe) cell.inferredSafe = true;
+
+  // Check gold
+  if (cell.gold && !goldFound) {
+    goldFound = true;
+    cell.gold = false;
+    log(`🏆 GOLD FOUND at (${r},${c})! Mission success!`, 'goal');
+    document.getElementById('gold-status').textContent = `🏆 Gold collected at (${r},${c})!`;
+    document.getElementById('gold-status').classList.add('found');
+    showToast('🏆 Gold Collected! Mission Complete!');
+    updateMetrics();
+  }
+
+  log(`MOVE → (${r},${c})`, 'move');
+
+  // Sense percepts
+  updatePercepts(r, c);
+
+  // Tell KB about percepts
+  tellPercepts(r, c);
+
+  updateMetrics();
+  renderGrid();
+}
+
+// ============================================================
+// PERCEPTS
+// ============================================================
+function updatePercepts(r, c) {
+  const cell = grid_data[idx(r,c)];
+  setPercept('perc-breeze', cell.breeze);
+  setPercept('perc-stench', cell.stench);
+  setPercept('perc-glitter', cell.gold);
+  setPercept('perc-bump', false);
+}
+
+function setPercept(id, active) {
+  const el = document.getElementById(id);
+  el.classList.toggle('active', !!active);
+}
+
+// ============================================================
+// GAME INIT
+// ============================================================
+function startNewEpisode() {
+  ROWS = parseInt(document.getElementById('inp-rows').value) || 6;
+  COLS = parseInt(document.getElementById('inp-cols').value) || 6;
+  NUM_PITS = parseInt(document.getElementById('inp-pits').value) || 5;
+  ROWS = Math.min(Math.max(ROWS, 3), 10);
+  COLS = Math.min(Math.max(COLS, 3), 10);
+  NUM_PITS = Math.min(Math.max(NUM_PITS, 1), ROWS*COLS - 3);
+
+  // Reset state
+  agentRow = ROWS - 1; agentCol = 0;
+  agentAlive = true;
+  goldFound = false;
+  kb = [];
+  inferenceCount = 0;
+  moveCount = 0;
+  cellsSafe = new Set();
+  running = false;
+  gameActive = true;
+  if (runInterval) { clearInterval(runInterval); runInterval = null; }
+
+  // Build grid
+  grid_data = Array.from({length: ROWS * COLS}, () => ({
+    pit: false, wumpus: false, gold: false,
+    breeze: false, stench: false,
+    visited: false, agentHere: false,
+    inferredSafe: false
+  }));
+
+  // Place agent
+  const agentIdx = idx(agentRow, agentCol);
+  grid_data[agentIdx].agentHere = true;
+  grid_data[agentIdx].visited = true;
+  cellsSafe.add(`${agentRow},${agentCol}`);
+  grid_data[agentIdx].inferredSafe = true;
+
+  // Forbidden cells (agent + its neighbors)
+  const forbidden = new Set([`${agentRow},${agentCol}`]);
+  neighbors(agentRow, agentCol).forEach(([r,c]) => forbidden.add(`${r},${c}`));
+
+  // Place pits
+  let placed = 0;
+  const cells = [];
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (!forbidden.has(`${r},${c}`)) cells.push([r,c]);
+
+  shuffle(cells);
+  for (let i = 0; i < Math.min(NUM_PITS, cells.length - 2); i++) {
+    const [r,c] = cells[i];
+    grid_data[idx(r,c)].pit = true;
+    placed++;
+  }
+
+  // Place wumpus
+  for (let i = placed; i < cells.length; i++) {
+    const [r,c] = cells[i];
+    if (!grid_data[idx(r,c)].pit) {
+      grid_data[idx(r,c)].wumpus = true;
+      wumpusPos = [r,c];
+      break;
+    }
+  }
+
+  // Place gold
+  for (let i = cells.length - 1; i >= 0; i--) {
+    const [r,c] = cells[i];
+    if (!grid_data[idx(r,c)].pit && !grid_data[idx(r,c)].wumpus) {
+      grid_data[idx(r,c)].gold = true;
+      goldPos = [r,c];
+      break;
+    }
+  }
+
+  // Compute breeze/stench
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      for (const [nr,nc] of neighbors(r,c)) {
+        if (grid_data[idx(nr,nc)].pit) grid_data[idx(r,c)].breeze = true;
+        if (grid_data[idx(nr,nc)].wumpus) grid_data[idx(r,c)].stench = true;
+      }
+    }
+  }
+
+  // Reset UI
+  document.getElementById('log-box').innerHTML = '';
+  document.getElementById('cnf-box').innerHTML = '<div style="color:var(--text-dim)">KB empty.</div>';
+  document.getElementById('gold-status').textContent = '🏆 Gold not yet found';
+  document.getElementById('gold-status').classList.remove('found');
+  document.getElementById('game-overlay').classList.remove('show');
+  document.getElementById('status-pill').textContent = '● ACTIVE';
+  setPercept('perc-breeze', false);
+  setPercept('perc-stench', false);
+  setPercept('perc-glitter', false);
+  setPercept('perc-bump', false);
+
+  document.getElementById('btn-step').disabled = false;
+  document.getElementById('btn-pause').disabled = false;
+  document.getElementById('btn-run').disabled = false;
+
+  log('=== New Episode Started ===', 'goal');
+  log(`Grid: ${ROWS}×${COLS}, Pits: ${NUM_PITS}, Agent at (${agentRow},${agentCol})`, 'move');
+
+  // Initial percept
+  updatePercepts(agentRow, agentCol);
+  tellPercepts(agentRow, agentCol);
+
+  updateMetrics();
+  renderGrid();
+}
+
+// ============================================================
+// STEP
+// ============================================================
+function stepAgent() {
+  if (!gameActive || !agentAlive || goldFound) return;
+
+  const next = chooseNext();
+  if (!next) {
+    log('⚠ Agent is stuck! No moves available.', 'warn');
+    showToast('Agent stuck — no safe moves found');
+    stopRun();
+    return;
+  }
+
+  const [nr, nc] = next.target;
+  if (next.type === 'frontier') {
+    log(`⚠ Moving to unproven cell (${nr},${nc}) as frontier`, 'warn');
+  } else if (next.type === 'backtrack') {
+    log(`↩ Backtracking to (${nr},${nc})`, 'move');
+  } else {
+    log(`✓ Safe move to (${nr},${nc})`, 'move');
+  }
+
+  moveAgent(nr, nc);
+}
+
+// ============================================================
+// AUTO RUN
+// ============================================================
+function startRun() {
+  if (running) return;
+  running = true;
+  document.getElementById('status-pill').textContent = '● RUNNING';
+  runInterval = setInterval(() => {
+    if (!agentAlive || goldFound) {
+      stopRun();
+      return;
+    }
+    stepAgent();
+  }, speed);
+}
+
+function stopRun() {
+  running = false;
+  if (runInterval) { clearInterval(runInterval); runInterval = null; }
+  document.getElementById('status-pill').textContent = '● PAUSED';
+}
+
+function endGame(success, cause) {
+  stopRun();
+  gameActive = false;
+  document.getElementById('btn-step').disabled = true;
+  document.getElementById('btn-run').disabled = true;
+
+  const overlay = document.getElementById('game-overlay');
+  const title = document.getElementById('overlay-title');
+  const sub = document.getElementById('overlay-sub');
+
+  if (success) {
+    title.textContent = '🏆 Mission Complete!';
+    sub.textContent = `Gold collected! Moves: ${moveCount}, Inferences: ${inferenceCount}`;
+  } else if (cause === 'pit') {
+    title.textContent = '💀 Fell into a Pit!';
+    sub.textContent = `Agent terminated. Moves: ${moveCount}`;
+  } else {
+    title.textContent = '☠ Eaten by Wumpus!';
+    sub.textContent = `Agent terminated. Moves: ${moveCount}`;
+  }
+
+  overlay.classList.add('show');
+  document.getElementById('status-pill').textContent = success ? '● COMPLETE' : '● DEAD';
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function renderGrid() {
+  const gridEl = document.getElementById('grid');
+  const cellSize = Math.min(90, Math.floor(Math.min(
+    (window.innerWidth - 600) / COLS,
+    (window.innerHeight - 120) / ROWS
+  )));
+
+  gridEl.style.gridTemplateColumns = `repeat(${COLS}, ${cellSize}px)`;
+
+  // Build all cells from top row (ROWS-1) to bottom (0) so visual top = high row
+  let html = '';
+  for (let r = ROWS - 1; r >= 0; r--) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = grid_data[idx(r,c)];
+      let classes = 'cell';
+      let icons = '';
+
+      if (cell.agentHere) {
+        classes += ' agent-here';
+        if (cell.breeze) classes += ' has-breeze';
+        if (cell.stench) classes += ' has-stench';
+        icons += `<span class="icon-badge agent-icon">🤖</span>`;
+        if (cell.gold) icons += `<span class="icon-badge">🏆</span>`;
+      } else if (cell.pit && (cell.visited || !agentAlive)) {
+        classes += ' pit-confirmed';
+        icons += `<span class="icon-badge">💀</span>`;
+      } else if (cell.wumpus && (cell.visited || !agentAlive)) {
+        classes += ' wumpus-confirmed';
+        icons += `<span class="icon-badge">☠️</span>`;
+      } else if (cell.visited) {
+        classes += ' visited safe';
+        if (cell.gold) icons += `<span class="icon-badge">🏆</span>`;
+        if (cell.breeze) icons += `<span class="icon-badge" style="font-size:.9rem">💨</span>`;
+        if (cell.stench) icons += `<span class="icon-badge" style="font-size:.9rem">🦨</span>`;
+      } else if (cell.inferredSafe) {
+        classes += ' safe';
+      } else {
+        // Check if it's a frontier cell (neighbor of visited)
+        const isFrontier = neighbors(r,c).some(([nr,nc]) => grid_data[idx(nr,nc)].visited);
+        if (isFrontier) classes += ' frontier';
+        else classes += ' unknown';
+      }
+
+      const safeIndicator = cell.inferredSafe && !cell.agentHere ? '<div class="safe-indicator"></div>' : '';
+      const label = cell.agentHere ? 'AGENT' : (cell.pit && !agentAlive ? 'PIT' : (cell.wumpus && !agentAlive ? 'WUMPUS' : ''));
+
+      html += `
+        <div class="${classes}" style="width:${cellSize}px;height:${cellSize}px;animation-delay:${(ROWS-1-r)*COLS*0.01 + c*0.01}s">
+          <div class="cell-coord">${r},${c}</div>
+          ${safeIndicator}
+          <div class="visit-path"></div>
+          <div class="cell-icons">${icons}</div>
+          ${label ? `<div class="cell-label">${label}</div>` : ''}
+        </div>`;
+    }
+  }
+  gridEl.innerHTML = html;
+}
+
+// ============================================================
+// UI HELPERS
+// ============================================================
+function log(msg, type = '') {
+  const box = document.getElementById('log-box');
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${type}`;
+  entry.textContent = msg;
+  box.appendChild(entry);
+  box.scrollTop = box.scrollHeight;
+}
+
+function updateMetrics() {
+  document.getElementById('met-inferences').textContent = inferenceCount;
+  document.getElementById('met-moves').textContent = moveCount;
+  document.getElementById('met-cells-safe').textContent = cellsSafe.size;
+  document.getElementById('met-kb-clauses').textContent = kb.length;
+}
+
+function updateCNFBox() {
+  const box = document.getElementById('cnf-box');
+  box.innerHTML = kb.slice(-30).map(clause =>
+    `<div class="cnf-clause">(${clause.join(' ∨ ')})</div>`
+  ).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+// ============================================================
+// EVENT LISTENERS
+// ============================================================
+document.getElementById('btn-new').addEventListener('click', startNewEpisode);
+
+document.getElementById('btn-step').addEventListener('click', () => {
+  stopRun();
+  stepAgent();
+});
+
+document.getElementById('btn-pause').addEventListener('click', () => {
+  if (running) stopRun();
+  else startRun();
+  document.getElementById('btn-pause').textContent = running ? 'Pause ▐▐' : '▶ Resume';
+});
+
+document.getElementById('btn-run').addEventListener('click', () => {
+  if (running) stopRun();
+  else startRun();
+});
+
+document.getElementById('speed-slider').addEventListener('input', function() {
+  speed = parseInt(this.value);
+  document.getElementById('speed-val').textContent = speed;
+  if (running) { stopRun(); startRun(); }
+});
+
+// Init
+startNewEpisode();
+</script>
+</body>
+</html>
